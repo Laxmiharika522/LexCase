@@ -3,7 +3,9 @@ import os
 import random
 import uuid
 from datetime import datetime, timezone, timedelta
-from server import db, hash_password, _now, _oid, put_object
+from server import db, hash_password, _now, put_object
+from database import init_db
+from storage import init_storage
 
 def get_random_date(days_ago_start=30, days_ago_end=0):
     start = datetime.now(timezone.utc) - timedelta(days=days_ago_start)
@@ -12,7 +14,11 @@ def get_random_date(days_ago_start=30, days_ago_end=0):
     return random_date.isoformat()
 
 async def seed():
-    print("Clearing collections...")
+    await init_db()
+    init_storage()
+
+    print("Clearing tables...")
+    await db.audit_logs.delete_many({})
     await db.users.delete_many({})
     await db.clients.delete_many({})
     await db.cases.delete_many({})

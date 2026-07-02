@@ -1,37 +1,48 @@
 version: "3.9"
 
 services:
-  mongo:
-    image: mongo:7
-    container_name: lexcase-mongo
+  postgres:
+    image: postgres:15-alpine
+    container_name: lexcase-postgres
     restart: unless-stopped
+    environment:
+      POSTGRES_USER: lexcase
+      POSTGRES_PASSWORD: lexcase
+      POSTGRES_DB: lexcase
     ports:
-      - "27017:27017"
+      - "5433:5432"   # 5433 on host — 5432 is often taken by other projects
     volumes:
-      - mongo_data:/data/db
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexcase"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: ./backend
     container_name: lexcase-backend
     restart: unless-stopped
     depends_on:
-      - mongo
+      postgres:
+        condition: service_healthy
     environment:
-      MONGO_URL: "mongodb://mongo:27017"
-      DB_NAME: "lexcase"
+      DATABASE_URL: "postgresql+asyncpg://lexcase:lexcase@postgres:5432/lexcase"
       CORS_ORIGINS: "http://localhost:3000"
       FRONTEND_URL: "http://localhost:3000"
       JWT_SECRET: "change-me-to-a-random-64-char-hex-secret"
       ADMIN_EMAIL: "admin@lexcase.com"
       ADMIN_PASSWORD: "Admin@123"
       ADMIN_NAME: "Firm Administrator"
+      STORAGE_BACKEND: "local"
+      STORAGE_DIR: "/app/storage"
       EMERGENT_LLM_KEY: "${EMERGENT_LLM_KEY:-sk-emergent-placeholder}"
       APP_NAME: "lexcase"
       ENVIRONMENT: "development"
     ports:
       - "8001:8001"
     volumes:
-      - ./backend:/app        # hot reload on source changes
+      - ./backend:/app
 
   frontend:
     build: ./frontend
@@ -47,7 +58,7 @@ services:
       - "3000:3000"
     volumes:
       - ./frontend:/app
-      - /app/node_modules      # keep container's node_modules
+      - /app/node_modules
 
 volumes:
-  mongo_data:
+  postgres_data:

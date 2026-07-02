@@ -36,6 +36,10 @@ export default function CaseDetail() {
   const [summarizing, setSummarizing] = useState(false);
   const [showTask, setShowTask] = useState(false);
   const [taskForm, setTaskForm] = useState({ title: "", due_date: "", priority: "medium" });
+  const [researchQuery, setResearchQuery] = useState("");
+  const [researchResults, setResearchResults] = useState([]);
+  const [researching, setResearching] = useState(false);
+  const [history, setHistory] = useState(null);
 
   const loadAll = async () => {
     try {
@@ -56,6 +60,23 @@ export default function CaseDetail() {
   };
 
   useEffect(() => { loadAll(); }, [id]);
+
+  const loadHistory = async () => {
+    try {
+      const res = await api.get(`/cases/${id}/history`);
+      setHistory(res.data);
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+
+  const searchResearch = async () => {
+    if (!researchQuery.trim()) return;
+    setResearching(true);
+    try {
+      const res = await api.get("/research/search", { params: { q: researchQuery } });
+      setResearchResults(res.data.results || []);
+    } catch (err) { toast.error(formatApiError(err)); }
+    finally { setResearching(false); }
+  };
 
   const updateStatus = async (v) => {
     await api.put(`/cases/${id}`, { status: v });
@@ -227,6 +248,8 @@ export default function CaseDetail() {
             <TabsList className="bg-white border border-slate-100 shadow-sm p-1.5 rounded-2xl w-full flex mb-6">
               <TabsTrigger value="documents" className="flex-1 rounded-xl data-[state=active]:bg-indigo-50 data-[state=active]:text-indigo-700 py-2.5 text-sm font-semibold transition-all">Documents</TabsTrigger>
               <TabsTrigger value="deadlines" className="flex-1 rounded-xl data-[state=active]:bg-indigo-50 data-[state=active]:text-indigo-700 py-2.5 text-sm font-semibold transition-all">Tasks & Deadlines</TabsTrigger>
+              <TabsTrigger value="research" className="flex-1 rounded-xl data-[state=active]:bg-indigo-50 data-[state=active]:text-indigo-700 py-2.5 text-sm font-semibold transition-all">Legal Research</TabsTrigger>
+              <TabsTrigger value="history" onClick={loadHistory} className="flex-1 rounded-xl data-[state=active]:bg-indigo-50 data-[state=active]:text-indigo-700 py-2.5 text-sm font-semibold transition-all">Case History</TabsTrigger>
             </TabsList>
 
             {/* Documents */}
@@ -335,6 +358,69 @@ export default function CaseDetail() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </TabsContent>
+
+            {/* Legal Research */}
+            <TabsContent value="research" className="pt-2">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 space-y-4">
+                <h2 className="font-serif text-2xl text-slate-800">Related Case Law</h2>
+                <p className="text-sm text-slate-500">Search CourtListener for relevant precedents related to this case.</p>
+                <div className="flex gap-2">
+                  <Input
+                    value={researchQuery}
+                    onChange={(e) => setResearchQuery(e.target.value)}
+                    placeholder={c.practice_area ? `${c.practice_area} ${c.title}` : c.title}
+                    className="rounded-xl h-11"
+                    onKeyDown={(e) => e.key === "Enter" && searchResearch()}
+                  />
+                  <Button onClick={searchResearch} disabled={researching} className="rounded-xl bg-indigo-600 hover:bg-indigo-700 shrink-0">
+                    {researching ? "Searching…" : "Search"}
+                  </Button>
+                </div>
+                {researchResults.length === 0 && !researching && (
+                  <p className="text-sm text-slate-400 italic">Enter a query to search legal databases.</p>
+                )}
+                <div className="space-y-3">
+                  {researchResults.map((r, i) => (
+                    <div key={i} className="p-4 rounded-xl border border-slate-100 hover:bg-slate-50">
+                      <div className="font-semibold text-slate-800">{r.title}</div>
+                      <div className="text-xs text-slate-500 mt-1">{r.court} · {r.date_filed?.slice?.(0, 10) || r.date_filed}</div>
+                      {r.snippet && <p className="text-sm text-slate-600 mt-2">{r.snippet}</p>}
+                      {r.url && <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-600 hover:underline mt-2 inline-block">View on CourtListener →</a>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* Case History */}
+            <TabsContent value="history" className="pt-2">
+              <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6 space-y-4">
+                <h2 className="font-serif text-2xl text-slate-800">Case History</h2>
+                {!history && <p className="text-sm text-slate-400">Loading history…</p>}
+                {history && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Audit Trail</h3>
+                      {history.audit_logs?.length === 0 && <p className="text-sm text-slate-400 italic">No audit entries yet.</p>}
+                      {history.audit_logs?.map((log) => (
+                        <div key={log.id} className="flex gap-3 py-2 border-b border-slate-50 text-sm">
+                          <span className="text-slate-400 font-mono text-xs shrink-0">{(log.created_at || "").slice(0, 16)}</span>
+                          <span className="font-medium text-slate-700">{log.action}</span>
+                          <span className="text-slate-500">{log.entity_type}</span>
+                          {log.details?.title && <span className="text-slate-600">— {log.details.title}</span>}
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Messages ({history.messages?.length || 0})</h3>
+                      {history.messages?.slice(0, 5).map((m) => (
+                        <div key={m.id} className="text-sm text-slate-600 py-1 border-b border-slate-50 truncate">{m.content}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </TabsContent>
           </Tabs>

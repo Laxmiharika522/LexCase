@@ -15,14 +15,16 @@ from typing import List, Optional, Literal
 import bcrypt
 import jwt
 import requests
-from bson import ObjectId
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Form, Header, Query
 from fastapi.responses import StreamingResponse, Response as FastResponse
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
+from db_adapter import db, parse_id
+from database import init_db, close_db
+from storage import init_storage, put_object, get_object, build_storage_path
+from audit import log_audit
 
 # ---------- CONFIG ----------
 JWT_ALGORITHM = "HS256"
@@ -32,35 +34,12 @@ STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 APP_NAME = os.environ.get("APP_NAME", "lexcase")
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
 
-# ---------- DB ----------
-mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ["DB_NAME"]]
-
 # ---------- APP ----------
 app = FastAPI(title="LexCase API")
 api = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("lexcase")
-
-# ---------- STORAGE ----------
-STORAGE_DIR = "/app/storage"
-os.makedirs(STORAGE_DIR, exist_ok=True)
-
-def put_object(path: str, data: bytes, content_type: str) -> dict:
-    full_path = os.path.join(STORAGE_DIR, path.replace("/", "_"))
-    with open(full_path, "wb") as f:
-        f.write(data)
-    return {"path": path, "size": len(data)}
-
-def get_object(path: str):
-    full_path = os.path.join(STORAGE_DIR, path.replace("/", "_"))
-    if not os.path.exists(full_path):
-        raise HTTPException(status_code=404, detail="File not found")
-    with open(full_path, "rb") as f:
-        data = f.read()
-    return data, "application/octet-stream"
 
 # ---------- AUTH HELPERS ----------
 def hash_password(pw: str) -> str:
@@ -130,7 +109,7 @@ async def get_current_user(request: Request) -> dict:
         payload = jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Invalid token type")
-        user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+        user = await db.users.find_one({"_id": payload["sub"]})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
         return user
@@ -274,11 +253,8 @@ class EmergencyContactIn(BaseModel):
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
-def _oid(id_: str) -> ObjectId:
-    try:
-        return ObjectId(id_)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid id")
+def _oid(id_: str):
+    return parse_id(id_)
 
 def _serialize(doc: dict) -> dict:
     if not doc:
@@ -400,7 +376,7 @@ async def list_users(user: dict = Depends(get_current_user)):
             "$or": [
                 {"role": {"$ne": "client"}},
                 {"client_id": {"$in": assigned_client_ids}},
-                {"_id": {"$in": [_oid(cid) for cid in assigned_client_ids if len(cid) == 24]}}
+                {"_id": {"$in": [_oid(cid) for cid in assigned_client_ids]}}
             ]
         }
     elif user.get("role") == "client":
@@ -424,7 +400,7 @@ async def list_users(user: dict = Depends(get_current_user)):
         q = {
             "$or": [
                 {"role": "admin"},
-                {"_id": {"$in": [_oid(lid) for lid in set(assigned_lawyer_ids) if len(lid) == 24]}}
+                {"_id": {"$in": [_oid(lid) for lid in set(assigned_lawyer_ids)]}}
             ]
         }
 
@@ -472,7 +448,7 @@ async def list_clients(user: dict = Depends(get_current_user), search: Optional[
     if user.get("role") == "lawyer":
         assigned_cases = await db.cases.find({"assigned_to": str(user["_id"])}).to_list(None)
         assigned_client_ids = [c["client_id"] for c in assigned_cases if c.get("client_id")]
-        client_oids = [_oid(cid) for cid in assigned_client_ids if len(cid) == 24]
+        client_oids = [_oid(cid) for cid in assigned_client_ids]
         
         q["$or"] = [
             {"_id": {"$in": client_oids}},
@@ -481,7 +457,7 @@ async def list_clients(user: dict = Depends(get_current_user), search: Optional[
         
     elif user.get("role") == "client":
         client_id = user.get("client_id") or str(user["_id"])
-        q["_id"] = _oid(client_id) if len(client_id) == 24 else None
+        q["_id"] = _oid(client_id)
 
     items = await db.clients.find(q).sort("created_at", -1).to_list(500)
     return [_serialize(i) for i in items]
@@ -519,6 +495,11 @@ async def create_case(payload: CaseIn, user: dict = Depends(get_current_user)):
         doc["case_number"] = f"CASE-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{secrets.token_hex(3).upper()}"
     result = await db.cases.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await log_audit(
+        user=user, action="create", entity_type="case",
+        entity_id=str(result.inserted_id), case_id=str(result.inserted_id),
+        details={"title": doc["title"]},
+    )
 
     # Send notifications if a lawyer is assigned
     if doc.get("assigned_to"):
@@ -569,6 +550,21 @@ async def list_cases(user: dict = Depends(get_current_user), status: Optional[st
         result.append(c_ser)
     return result
 
+@api.get("/cases/{case_id}/history")
+async def get_case_history(case_id: str, user: dict = Depends(get_current_user)):
+    case = await db.cases.find_one({"_id": _oid(case_id)})
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    logs = await db.audit_logs.find({"case_id": case_id}).sort("created_at", -1).to_list(200)
+    tasks = await db.tasks.find({"case_id": case_id}).sort("created_at", -1).to_list(100)
+    messages = await db.messages.find({"case_id": case_id}).sort("created_at", -1).to_list(100)
+    return {
+        "audit_logs": [_serialize(l) for l in logs],
+        "tasks": [_serialize(t) for t in tasks],
+        "messages": [_serialize(m) for m in messages],
+    }
+
+
 @api.get("/cases/{case_id}")
 async def get_case(case_id: str, user: dict = Depends(get_current_user)):
     doc = await db.cases.find_one({"_id": _oid(case_id)})
@@ -599,6 +595,10 @@ async def update_case(case_id: str, payload: CaseUpdate, user: dict = Depends(ge
     
     await db.cases.update_one({"_id": _oid(case_id)}, {"$set": updates})
     doc = await db.cases.find_one({"_id": _oid(case_id)})
+    await log_audit(
+        user=user, action="update", entity_type="case",
+        entity_id=case_id, case_id=case_id, details=updates,
+    )
 
     # Send notifications if a new lawyer was assigned
     if assigned_to and assigned_to != old_doc.get("assigned_to"):
@@ -691,8 +691,7 @@ async def upload_document(
     confidential: bool = Form(False),
     user: dict = Depends(get_current_user),
 ):
-    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "bin"
-    path = f"{APP_NAME}/uploads/{str(user['_id'])}/{uuid.uuid4()}.{ext}"
+    path = build_storage_path(case_id, str(user["_id"]), file.filename or "upload.bin")
     data = await file.read()
     result = put_object(path, data, file.content_type or "application/octet-stream")
     doc = {
@@ -712,6 +711,11 @@ async def upload_document(
     }
     ins = await db.documents.insert_one(doc)
     doc["_id"] = ins.inserted_id
+    await log_audit(
+        user=user, action="create", entity_type="document",
+        entity_id=str(ins.inserted_id), case_id=case_id,
+        details={"filename": file.filename},
+    )
     return _serialize(doc)
 
 @api.get("/documents")
@@ -1147,12 +1151,17 @@ async def create_appointment(payload: AppointmentIn, user: dict = Depends(get_cu
     return _serialize(doc)
 
 @api.get("/appointments")
-async def list_appointments(user: dict = Depends(get_current_user)):
+async def list_appointments(
+    user: dict = Depends(get_current_user),
+    case_id: Optional[str] = None,
+):
     q = {}
     if user.get("role") == "client":
         q["client_id"] = user.get("client_id") or str(user["_id"])
     elif user.get("role") == "lawyer":
         q["lawyer_id"] = str(user["_id"])
+    if case_id:
+        q["case_id"] = case_id
     items = await db.appointments.find(q).sort("date", 1).to_list(500)
     return [_serialize(i) for i in items]
 
@@ -1261,10 +1270,45 @@ async def get_analytics(user: dict = Depends(require_role("admin"))):
         "client_performance": client_performance
     }
 
+# ---------- LEGAL RESEARCH ----------
+@api.get("/research/search")
+async def legal_research_search(
+    q: str = Query(..., min_length=2),
+    jurisdiction: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
+    """Search case law via CourtListener API (free legal research integration)."""
+    params = {"q": q, "type": "o", "order_by": "score desc"}
+    if jurisdiction:
+        params["court_jurisdiction"] = jurisdiction
+    try:
+        resp = requests.get(
+            "https://www.courtlistener.com/api/rest/v4/search/",
+            params=params,
+            headers={"Accept": "application/json"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        results = []
+        for item in data.get("results", [])[:10]:
+            results.append({
+                "title": item.get("caseName") or item.get("case_name") or "Unknown",
+                "court": item.get("court") or item.get("court_citation_string", ""),
+                "date_filed": item.get("dateFiled") or item.get("date_filed"),
+                "url": f"https://www.courtlistener.com{item['absolute_url']}" if item.get("absolute_url") else None,
+                "snippet": (item.get("snippet") or "")[:300],
+            })
+        return {"query": q, "count": len(results), "results": results}
+    except requests.RequestException as exc:
+        logger.warning("CourtListener search failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Legal research service unavailable") from exc
+
+
 # ---------- ROOT ----------
 @api.get("/")
 async def root():
-    return {"app": "LexCase", "status": "ok"}
+    return {"app": "LexCase", "status": "ok", "storage": os.environ.get("STORAGE_BACKEND", "local")}
 
 # ---------- SEEDING ----------
 async def seed_admin():
@@ -1285,28 +1329,29 @@ async def seed_admin():
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
         logger.info(f"Admin password updated: {admin_email}")
 
-async def seed_indexes():
-    await db.users.create_index("email", unique=True)
-    await db.cases.create_index("status")
-    await db.tasks.create_index("due_date")
-    await db.documents.create_index("case_id")
+def _cors_origins() -> list[str]:
+    raw = os.environ.get("CORS_ORIGINS") or os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
 
 @app.on_event("startup")
 async def on_startup():
     try:
-        await seed_indexes()
+        await init_db()
         await seed_admin()
+        logger.info("Database initialized")
     except Exception as e:
-        logger.exception(f"Startup task failed: {e}")
+        logger.exception(f"Database startup failed: {e}")
     try:
         init_storage()
         logger.info("Storage initialized")
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
 
+
 @app.on_event("shutdown")
 async def shutdown():
-    client.close()
+    await close_db()
 
 # ---------- MIDDLEWARE ----------
 app.include_router(api)
@@ -1314,7 +1359,7 @@ app.include_router(api)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000")],
+    allow_origins=_cors_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],

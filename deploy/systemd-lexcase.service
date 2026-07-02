@@ -1,0 +1,15 @@
+[Unit]
+Description=LexCase FastAPI Backend
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/opt/lexcase/backend
+EnvironmentFile=/opt/lexcase/backend/.env
+ExecStart=/usr/bin/python3.11 -m uvicorn server:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

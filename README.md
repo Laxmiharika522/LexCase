@@ -4,151 +4,206 @@
   <p><strong>A Modern, Secure Legal Case Management Platform</strong></p>
   <p>
     Built for law firms to manage cases, interact securely with clients, and streamline day-to-day operations.
+    Cloud-ready for AWS deployment (P31 coursework).
   </p>
 </div>
 
 <br/>
 
-## 🌟 Key Features
+## Key Features
 
 LexCase is built around a secure, role-based architecture providing specialized portals for every stakeholder in the legal process:
 
-### 🛡️ Admin Portal
-The command center for law firm partners and administrators.
-- **Firm Oversight:** Track active cases, financial metrics, and team performance via a comprehensive dashboard.
-- **User Management:** Create and manage accounts for lawyers and paralegals.
-- **Case Assignment:** Open new cases and assign them to specific attorneys.
+### Admin Portal
+- Firm oversight dashboard with case metrics and analytics
+- User management for lawyers and paralegals
+- Case assignment and firm-wide document oversight
 
-### ⚖️ Lawyer Portal
-A focused workspace designed for attorney productivity.
-- **Case & Task Management:** Track deadlines, manage case files, and update case statuses.
+### Lawyer Portal
+- Case and task management with deadline tracking
+- Secure client messaging
+- Invoice generation and billing
 
-- **Client Communication:** Secure, encrypted direct messaging with assigned clients.
-- **Billing:** Generate and track invoices.
+### Client Portal
+- Real-time case status tracking
+- Secure document uploads to case files
+- Messaging, appointments, and invoice visibility
 
-### 🤝 Client Portal
-A secure, transparent environment for clients to stay updated on their legal matters.
-- **Case Tracking:** View the real-time status of assigned cases.
-- **Secure Messaging:** Communicate directly and securely with their assigned lawyer.
-- **Document Vault:** Safely upload evidence, contracts, and documents directly to their case file.
-- **Invoices & Appointments:** Keep track of upcoming hearings, strategy meetings, and pending invoices.
-
----
-
-## 🛠️ Tech Stack
-
-- **Backend:** FastAPI (Python), Motor (Async MongoDB), JWT Authentication
-- **Frontend:** React, Tailwind CSS, Shadcn/UI (Radix UI), Vite
-- **Database:** MongoDB
-
+### Cloud & Compliance (AWS-Ready)
+- **S3** document storage with local fallback for development
+- **PostgreSQL (RDS)** for structured case data
+- **Audit logs** and case history timeline
+- **Legal research** integration via CourtListener API
+- **Lambda + EventBridge** deadline reminder handler (optional)
 
 ---
 
-## 🚀 Getting Started
+## Tech Stack
 
-Follow the instructions below to get LexCase running on your local machine.
-
-### Option 1: Running with Docker (Recommended)
-
-Docker is the fastest way to get LexCase running, as it spins up the frontend, backend, and MongoDB simultaneously.
-
-**Prerequisites:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running.
-
-1. **Clone the repository**
-   ```bash
-   git clone <your-repo-url>
-   cd lexcase
-   ```
-
-2. **Start the containers**
-   ```bash
-   docker compose up --build -d
-   ```
-   *(Note: The containers will hot-reload automatically when you make changes to the source code).*
-
-3. **Seed the Database with Professional Dummy Data**
-   To easily test the platform, you can populate the database with a rich set of dummy data (including sample lawyers, clients, cases, documents, tasks, and messages).
-   ```bash
-   docker compose exec backend python seed.py
-   ```
-
-4. **Access the Application**
-   - **Frontend UI:** [http://localhost:3000](http://localhost:3000)
-   - **Backend API Docs:** [http://localhost:8001/docs](http://localhost:8001/docs)
-
-5. **Test Accounts (from Seed Data)**
-   - **Admin:** `admin@lexcase.com` | Password: `Admin@123`
-   - **Lawyer:** `rahul@lexcase.com` | Password: `Lawyer@123`
-   - **Client:** `contact@rameshtraders.com` | Password: `Client@123`
+| Layer | Technology |
+|-------|------------|
+| Backend | FastAPI, SQLAlchemy (async), JWT + bcrypt |
+| Frontend | React, Tailwind CSS, Shadcn/UI (Radix) |
+| Database | PostgreSQL 15 |
+| Document Storage | Local disk (dev) / Amazon S3 (production) |
+| Cloud (AWS) | EC2, RDS, S3, IAM, Lambda, EventBridge |
 
 ---
 
-### Option 2: Manual Local Setup (Without Docker)
+## Getting Started
 
-If you prefer to run the services directly on your host machine, follow these steps.
+### Prerequisites
 
-**Prerequisites:** Python 3.10+, Node.js 18+, MongoDB (running locally or via Atlas).
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (recommended)
+- Or: Python 3.11+, Node.js 18+, PostgreSQL 15+
 
-#### 1. Setup the Backend
+### Option 1: Docker (Recommended)
+
+```bash
+git clone https://github.com/Laxmiharika522/LexCase.git
+cd LexCase
+docker compose up --build -d
+docker compose exec backend python seed.py
+```
+
+**Access the app:**
+- Frontend: http://localhost:3000
+- API docs: http://localhost:8001/docs
+- PostgreSQL (host): `localhost:5433` (mapped to avoid port conflicts)
+
+Containers hot-reload on source changes.
+
+> **Note:** If port `5432` is already in use on your machine, PostgreSQL is exposed on **5433**. The backend connects internally via Docker networking — no config change needed.
+
+### Test Accounts (Seed Data)
+
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | `admin@lexcase.com` | `Admin@123` |
+| Lawyer | `rahul@lexcase.com` | `Lawyer@123` |
+| Client | `contact@rameshtraders.com` | `Client@123` |
+
+See `credentials.txt` (if included) or run `seed.py` for the full list of demo accounts.
+
+---
+
+### Option 2: Manual Local Setup
+
+#### Backend
+
 ```bash
 cd backend
-
-# Create and activate a virtual environment
 python -m venv .venv
-source .venv/bin/activate      # On Windows use: .venv\Scripts\activate
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
 
-# Install dependencies
 pip install -r requirements.txt
 pip install emergentintegrations --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
 
-# Configure Environment Variables
 cp .env.example .env
-# Open .env and set MONGO_URL to your local/Atlas MongoDB connection string
+# Set DATABASE_URL to your PostgreSQL instance
 
-# Run the database seeder
 python seed.py
-
-# Start the FastAPI server
 uvicorn server:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-#### 2. Setup the Frontend (Open a new terminal tab)
+#### Frontend
+
 ```bash
 cd frontend
-
-# Install dependencies
 yarn install
-
-# Configure Environment Variables
 cp .env.example .env
-# Ensure REACT_APP_BACKEND_URL=http://localhost:8001 is set inside .env
+# REACT_APP_BACKEND_URL=http://localhost:8001
 
-# Start the React development server
 yarn start
 ```
-*The frontend will be available at [http://localhost:3000](http://localhost:3000).*
 
 ---
 
-## ☁️ Deployment
+## Environment Variables
 
-### AWS App Runner (Backend)
-1. Push the repository to GitHub.
-2. In the AWS App Runner console, create a new service from your GitHub repo.
-3. Select **Use a configuration file** (`apprunner.yaml`).
-4. Set your environment variables in the console (`MONGO_URL`, `JWT_SECRET`, `FRONTEND_URL`, etc).
+### Backend (`backend/.env.example`)
 
-### Vercel / AWS S3 + CloudFront (Frontend)
-1. Simply import the `frontend` folder into Vercel, or build using `yarn build` and upload the `dist`/`build` folder to an S3 bucket.
-2. Ensure you set the `REACT_APP_BACKEND_URL` environment variable to point to your deployed App Runner URL.
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `STORAGE_BACKEND` | `local` (dev) or `s3` (AWS) |
+| `S3_BUCKET_NAME` | S3 bucket name (production) |
+| `AWS_REGION` | AWS region (e.g. `us-east-1`) |
+| `JWT_SECRET` | 64-char random hex secret |
+| `CORS_ORIGINS` | Comma-separated allowed origins |
+
+### Frontend (`frontend/.env.example`)
+
+| Variable | Description |
+|----------|-------------|
+| `REACT_APP_BACKEND_URL` | Backend API URL |
 
 ---
 
-## 🤝 Contributing
-1. Fork the repository.
-2. Create your feature branch (`git checkout -b feature/amazing-feature`).
-3. Commit your changes (`git commit -m 'Add some amazing feature'`).
-4. Push to the branch (`git push origin feature/amazing-feature`).
-5. Open a Pull Request.
+## AWS Deployment (P31 Coursework)
 
+Full step-by-step guide: **[deploy/AWS-SETUP.md](deploy/AWS-SETUP.md)**
 
+Cost-optimized architecture for AWS Academy sandbox (~$20 budget):
+
+```
+Browser → EC2 (Nginx + FastAPI + React) → RDS PostgreSQL
+                                       → S3 (documents)
+EventBridge → Lambda (deadline reminders)
+```
+
+| P31 Requirement | Implementation |
+|-----------------|----------------|
+| S3 document storage | `STORAGE_BACKEND=s3` + IAM instance role |
+| EC2 hosting | Single t3.micro with Nginx |
+| RDS database | PostgreSQL db.t3.micro |
+| IAM access control | EC2 role for S3; JWT roles for users |
+| Workflow automation | EventBridge + Lambda reminders |
+| Case history | `audit_logs` table + `/api/cases/{id}/history` |
+| Legal research | CourtListener API at `/api/research/search` |
+| Client portal | React client dashboard |
+
+**Deploy files:**
+- `deploy/AWS-SETUP.md` — Console setup guide
+- `deploy/env.production.example` — Production `.env` template
+- `deploy/nginx.conf` — Nginx reverse proxy config
+- `deploy/systemd-lexcase.service` — Backend systemd unit
+- `backend/lambda/reminder_handler.py` — Deadline reminder Lambda
+
+**Teardown all AWS resources after your demo** to protect your Academy credit.
+
+---
+
+## Project Structure
+
+```
+LexCase/
+├── backend/
+│   ├── server.py          # FastAPI application
+│   ├── models.py          # PostgreSQL ORM models
+│   ├── db_adapter.py      # Database access layer
+│   ├── storage.py         # Local / S3 document storage
+│   ├── audit.py           # Case history audit logging
+│   ├── seed.py            # Demo data seeder
+│   └── lambda/            # AWS Lambda handlers
+├── frontend/              # React SPA
+├── deploy/                # AWS deployment configs
+└── docker-compose.yml     # Local dev (PostgreSQL + backend + frontend)
+```
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Commit your changes (`git commit -m 'Add your feature'`)
+4. Push to the branch (`git push origin feature/your-feature`)
+5. Open a Pull Request
+
+---
+
+## License
+
+This project is developed as part of an academic coursework (P31 — Cloud-Based Legal Case Management).

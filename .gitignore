@@ -56,5 +56,6 @@ yarn-error.log*
 
 # Docker
 mongo_data/
+postgres_data/
 .docker/
 docker-compose.override.yml
