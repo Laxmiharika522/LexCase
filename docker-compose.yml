@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: lexcase-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build: ./backend
+    container_name: lexcase-backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      MONGO_URL: "mongodb://mongo:27017"
+      DB_NAME: "lexcase"
+      CORS_ORIGINS: "http://localhost:3000"
+      FRONTEND_URL: "http://localhost:3000"
+      JWT_SECRET: "change-me-to-a-random-64-char-hex-secret"
+      ADMIN_EMAIL: "admin@lexcase.com"
+      ADMIN_PASSWORD: "Admin@123"
+      ADMIN_NAME: "Firm Administrator"
+      EMERGENT_LLM_KEY: "${EMERGENT_LLM_KEY:-sk-emergent-placeholder}"
+      APP_NAME: "lexcase"
+      ENVIRONMENT: "development"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend:/app        # hot reload on source changes
+
+  frontend:
+    build: ./frontend
+    container_name: lexcase-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      REACT_APP_BACKEND_URL: "http://localhost:8001"
+      WDS_SOCKET_PORT: "0"
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules      # keep container's node_modules
+
+volumes:
+  mongo_data:

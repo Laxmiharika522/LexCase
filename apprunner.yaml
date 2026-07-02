@@ -1,0 +1,32 @@
+version: 1.0
+runtime: docker
+
+# AWS App Runner config for the FastAPI backend.
+# Frontend should be deployed separately (S3+CloudFront, Vercel, or another App Runner service).
+
+build:
+  commands:
+    build:
+      - echo "Building backend Docker image"
+
+run:
+  runtime-version: latest
+  command: uvicorn server:app --host 0.0.0.0 --port 8001
+  network:
+    port: 8001
+    env: PORT
+  env:
+    # NOTE: set actual values as secrets in App Runner console — do not commit real values here.
+    - name: ENVIRONMENT
+      value: production
+    - name: APP_NAME
+      value: lexcase
+    - name: DB_NAME
+      value: lexcase
+    # These MUST be set in App Runner console as environment variables / secrets:
+    #   MONGO_URL          (e.g. mongodb+srv://user:pass@cluster.mongodb.net)
+    #   JWT_SECRET         (64-char random hex)
+    #   ADMIN_EMAIL, ADMIN_PASSWORD
+    #   EMERGENT_LLM_KEY
+    #   FRONTEND_URL       (https://your-frontend-domain.com)
+    #   CORS_ORIGINS       (https://your-frontend-domain.com)
