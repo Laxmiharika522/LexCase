@@ -145,33 +145,27 @@ yarn start
 
 Full step-by-step guide: **[deploy/AWS-SETUP.md](deploy/AWS-SETUP.md)**
 
-Cost-optimized architecture for AWS Academy sandbox (~$20 budget):
+Architecture (AWS Academy sandbox, ~$50 credit):
+
+| Component | Service |
+|-----------|---------|
+| Backend | EC2 (t3.micro) + Docker |
+| Frontend | S3 + CloudFront (HTTPS, no domain needed) |
+| Database | RDS PostgreSQL |
+| Documents | S3 (private bucket) |
+| Auth | IAM (infra) + JWT (admin / lawyer / client) |
 
 ```
-Browser → EC2 (Nginx + FastAPI + React) → RDS PostgreSQL
-                                       → S3 (documents)
-EventBridge → Lambda (deadline reminders)
+Browser → CloudFront (/ → S3 React, /api/* → EC2 Docker API) → RDS + S3
 ```
-
-| P31 Requirement | Implementation |
-|-----------------|----------------|
-| S3 document storage | `STORAGE_BACKEND=s3` + IAM instance role |
-| EC2 hosting | Single t3.micro with Nginx |
-| RDS database | PostgreSQL db.t3.micro |
-| IAM access control | EC2 role for S3; JWT roles for users |
-| Workflow automation | EventBridge + Lambda reminders |
-| Case history | `audit_logs` table + `/api/cases/{id}/history` |
-| Legal research | CourtListener API at `/api/research/search` |
-| Client portal | React client dashboard |
 
 **Deploy files:**
 - `deploy/AWS-SETUP.md` — Console setup guide
+- `deploy/docker-compose.ec2.yml` — Backend-only Docker Compose for EC2
 - `deploy/env.production.example` — Production `.env` template
-- `deploy/nginx.conf` — Nginx reverse proxy config
-- `deploy/systemd-lexcase.service` — Backend systemd unit
-- `backend/lambda/reminder_handler.py` — Deadline reminder Lambda
+- `backend/lambda/reminder_handler.py` — Optional deadline reminder Lambda
 
-**Teardown all AWS resources after your demo** to protect your Academy credit.
+**Teardown all AWS resources after your demo** to protect your sandbox credits.
 
 ---
 

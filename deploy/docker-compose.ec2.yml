@@ -1,0 +1,14 @@
+# Production backend only — run on EC2 (RDS and S3 are external AWS services).
+# Usage (on EC2, from repo root):
+#   cp deploy/env.production.example backend/.env   # edit values first
+#   docker compose -f deploy/docker-compose.ec2.yml up -d --build
+
+services:
+  backend:
+    build: ../backend
+    container_name: lexcase-backend
+    restart: unless-stopped
+    env_file:
+      - ../backend/.env
+    ports:
+      - "8001:8001"
