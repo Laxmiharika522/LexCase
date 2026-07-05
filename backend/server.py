@@ -1330,7 +1330,10 @@ async def seed_admin():
         logger.info(f"Admin password updated: {admin_email}")
 
 def _cors_origins() -> list[str]:
-    raw = os.environ.get("CORS_ORIGINS") or os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    raw = os.environ.get(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:3001",
+    )
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 

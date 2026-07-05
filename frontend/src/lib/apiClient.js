@@ -1,11 +1,18 @@
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-export const API_BASE = `${BACKEND_URL}/api`;
+// Baked in at build time. Empty string = same-origin /api (nginx proxy on EC2).
+// Local dev defaults to localhost:8001 when .env is missing.
+const BACKEND_URL =
+  process.env.REACT_APP_BACKEND_URL ??
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:8001");
+export const API_BASE = BACKEND_URL
+  ? `${BACKEND_URL.replace(/\/$/, "")}/api`
+  : "/api";
 
 export const api = axios.create({
   baseURL: API_BASE,
-  withCredentials: true,
+  // JWT is sent via Authorization header — not cookies
+  withCredentials: false,
 });
 
 export function formatApiError(err) {

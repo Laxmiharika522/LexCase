@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import String, cast, delete, func, or_, select, update
+from sqlalchemy import String, and_, cast, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import async_session
@@ -112,8 +112,16 @@ def build_filter(model, query: dict):
     clauses = []
     for key, value in query.items():
         if key == "$or":
-            sub = [build_filter(model, subq) for subq in value]
-            clauses.append(or_(*sub))
+            or_parts = []
+            for subq in value:
+                sub_clauses = build_filter(model, subq)
+                if not sub_clauses:
+                    continue
+                or_parts.append(
+                    sub_clauses[0] if len(sub_clauses) == 1 else and_(*sub_clauses)
+                )
+            if or_parts:
+                clauses.append(or_(*or_parts))
             continue
         col_name = "id" if key == "_id" else key
         if not hasattr(model, col_name):
@@ -130,7 +138,10 @@ def build_filter(model, query: dict):
         else:
             if col_name == "id":
                 value = parse_id(value)
-            clauses.append(column == value)
+            if value is None:
+                clauses.append(column.is_(None))
+            else:
+                clauses.append(column == value)
     return clauses
 
 

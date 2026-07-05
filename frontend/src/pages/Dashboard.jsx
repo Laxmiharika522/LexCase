@@ -70,8 +70,9 @@ export default function Dashboard() {
     </div>
   );
   
-  const unreadMessagesCount = messages.filter(m => m.recipient_id === user?.id).length;
-
+const unreadMessagesCount = Array.isArray(messages)
+  ? messages.filter(m => m.recipient_id === user?.id).length
+  : 0;
   // Build notifications
   const notifications = [];
   if (unreadMessagesCount > 0) {

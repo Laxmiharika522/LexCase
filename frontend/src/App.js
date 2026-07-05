@@ -37,29 +37,31 @@ function CasesRouter() {
   return <Cases />;
 }
 
+function AuthLoading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-sm text-zinc-500 overline">Loading LexCase…</div>
+    </div>
+  );
+}
+
 function Protected({ children }) {
   const { user, loading } = useAuth();
-  if (loading || user === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-sm text-zinc-500 overline">Loading LexCase…</div>
-      </div>
-    );
-  }
+  if (loading || user === null) return <AuthLoading />;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
 
 function PublicOnly({ children }) {
   const { user, loading } = useAuth();
-  if (loading || user === null) return null;
+  if (loading || user === null) return <AuthLoading />;
   if (user) return <Navigate to="/dashboard" replace />;
   return children;
 }
 
 function RoleRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
-  if (loading || user === null) return null;
+  if (loading || user === null) return <AuthLoading />;
   if (!user) return <Navigate to="/login" replace />;
   if (allowedRoles && !allowedRoles.includes(user.role)) return <Navigate to="/dashboard" replace />;
   return children;
@@ -89,7 +91,7 @@ export default function App() {
             <Route path="/messages" element={<Messages />} />
             <Route path="/profile" element={<Profile />} />
           </Route>
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
       <Toaster richColors position="top-right" />
